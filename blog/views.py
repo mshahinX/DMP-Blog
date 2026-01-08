@@ -4,28 +4,36 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Blog
-from .serializers import BlogSerializer
+from .serializers import BlogSerializer, RegisterSerializer, LogoutSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.generics import (ListCreateAPIView, RetrieveUpdateDestroyAPIView)
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsOwner
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
 class RegisterView(APIView):
     permission_classes = []
 
-    def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password') 
+    @extend_schema(
+        request=RegisterSerializer,
+        examples=[
+            OpenApiExample(
+                name="Example",
+                value={
+                    "username": "newuser",
+                    "password": "newpassword123"
+                }
+            )
+        ],
+        responses={201: OpenApiResponse(description="User registered successfully.")}
+    )    
 
-        if not username or not password:
-            return Response({'error': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        User.objects.create_user(
-            username=username, 
-            password=password)
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         
         return Response(
             {'message': 'User registered successfully.'}, 
@@ -35,16 +43,21 @@ class RegisterView(APIView):
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        try:
-            refresh_token = request.data.get("refresh")
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({"message": "Successfully logged out."}, status=200)
-       
-        except Exception as e:
-            return Response({"error": "Invalid token."}, status=400)  
+    @extend_schema(
+        request=LogoutSerializer,
+        responses={205: OpenApiResponse(description="User logged out successfully.")}
+    )
 
+    def post(self, request):
+        serializer = LogoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            token = RefreshToken(serializer.validated_data['refresh'])
+            token.blacklist()
+            return Response({'message': 'User logged out successfully.'}, status=status.HTTP_205_RESET_CONTENT)
+        except Exception as e:
+            return Response({'error': 'Invalid token.'}, status=status.HTTP_400_BAD_REQUEST)
 
 class BlogViewSet(ModelViewSet):
     serializer_class = BlogSerializer
